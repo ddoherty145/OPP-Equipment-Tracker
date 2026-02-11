@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
 
@@ -6,7 +5,7 @@ services:
     image: postgres:15-alpine
     container_name: equipment-db
     restart: always
-    enviornment:
+    environment:
       POSTGRES_DB: equipment-db
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin
@@ -20,9 +19,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+# api
+  api:
+    build: ./api
+    container_name: equipment-api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: equipment-db
+      DB_USER: admin
+      DB_PASSWORD: admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./api:/app
       
 # pgadmin (Database Management UI)
-pgadmin:
+  pgadmin:
     image: dpage/pgadmin4:latest
     container_name: equipment-pgadmin
     restart: always
