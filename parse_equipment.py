@@ -2,43 +2,39 @@
 Equipment Usage Report Parser
 Parses PDF reports from ERP system and imports into PostgreSQL database
 """
+
 import re
+import pdfplumber
+import psycopg2
+import os
 import sys
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-
-import pdfplumber
-import psycopg
-from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
-import os
+from typing import List, Dict, Any
 
 # ============================================================================
-# CONFIGURATION & GLOBAL POOL
+# DATABASE CONNECTION (SIMPLE - NO POOLING)
 # ============================================================================
 
-DB_CONNINFO = (
-    f"host={os.getenv('DB_HOST', 'localhost')} "
-    f"port={os.getenv('DB_PORT', '5432')} "
-    f"dbname={os.getenv('DB_NAME', 'equipment_db')} "
-    f"user={os.getenv('DB_USER', 'admin')} "
-    f"password={os.getenv('DB_PASSWORD', 'admin')}"
-)
-
-pool: Optional[ConnectionPool] = None
-
-
-def init_pool():
-    global pool
-    pool = ConnectionPool(
-        conninfo=DB_CONNINFO,
-        min_size=1,
-        max_size=5,
-        timeout=30,
-        kwargs={"row_factory": dict_row},
-        open=False,  # we'll open connections explicitly when needed
-    )
-    print("Database connection pool initialized")
+def connect_to_database():
+    """
+    Connect to Docker PostgreSQL database
+    
+    Returns:
+        psycopg2.connection: Database connection object
+    """
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST", "localhost"),
+            port=os.getenv("DB_PORT", "5432"),
+            database=os.getenv("DB_NAME", "equipment_db"),
+            user=os.getenv("DB_USER", "admin"),
+            password=os.getenv("DB_PASSWORD", "admin")
+        )
+        print("✅ Successfully connected to database")
+        return conn
+    except psycopg2.Error as e:
+        print(f"❌ Database connection error: {e}")
+        sys.exit(1)
 
 
 # ============================================================================
@@ -48,89 +44,89 @@ def init_pool():
 def parse_equipment_pdf(pdf_path: str) -> List[Dict[str, Any]]:
     """
     Parse Equipment Usage Report PDF and extract structured data
+    
+    Args:
+        pdf_path: Path to the PDF file
+        
+    Returns:
+        List of dictionaries containing equipment data and usage logs
     """
     extracted_data = []
-
-    # Equipment header: "Equipment: 10125-DL - Int'l 2275 Dump Truck"
-    eq_header_pattern = re.compile(r"Equipment:\s+([A-Z0-9\-]+)\s+-\s+(.+?)(?:\s*$|\s+[-–—])", re.IGNORECASE)
-
-    # Data row patterns - more flexible to handle different spacing/formats
+    
+    # Regex patterns for parsing
+    eq_header_pattern = re.compile(r"Equipment:\s+([\w\d-]+)\s+-\s+(.+)")
     data_row_pattern = re.compile(
-        r"""
-        (\d{1,2}/\d{1,2}/\d{4})            # Date: MM/DD/YYYY
-        .*?
-        (\d+\.\d{2})                       # Hours: X.XX
-        .*?
-        ([\d,]+\.\d{2})                    # Cost: X,XXX.XX or XXX.XX
-        .*?
-        ([\d,]+\.\d{2})                    # Revenue: X,XXX.XX or XXX.XX
-        """,
-        re.VERBOSE | re.IGNORECASE
+        r"(\d{1,2}/\d{1,2}/\d{4})"
+        r".*?"
+        r"(\d+\.\d{2})"
+        r".*?"
+        r"([\d,]+\.\d{2})"
+        r".*?"
+        r"([\d,]+\.\d{2})"
     )
-
+    
     current_equipment = None
-
-    print(f"\n📄 Parsing PDF: {pdf_path}")
-    print("═" * 80)
-
+    
+    print(f"\n📄 Opening PDF: {pdf_path}")
+    print("=" * 80)
+    
     try:
         with pdfplumber.open(pdf_path) as pdf:
-            print(f"Total pages: {len(pdf.pages)}")
-
+            total_pages = len(pdf.pages)
+            print(f"📊 Total pages: {total_pages}\n")
+            
             for page_num, page in enumerate(pdf.pages, 1):
                 text = page.extract_text()
+                
                 if not text:
+                    print(f"⚠️  Page {page_num}: No text found, skipping...")
                     continue
-
-                print(f"  Page {page_num:2d}/{len(pdf.pages)}", end="")
-
-                for line in text.splitlines():
-                    line = line.strip()
-
-                    # New equipment section
+                
+                print(f"📖 Processing page {page_num}/{total_pages}...")
+                
+                for line in text.split('\n'):
                     eq_match = eq_header_pattern.search(line)
                     if eq_match:
-                        eq_id = eq_match.group(1).strip()
-                        name = eq_match.group(2).strip()
                         current_equipment = {
-                            "equipment_id": eq_id,
-                            "name": name,
+                            "equipment_id": eq_match.group(1).strip(),
+                            "name": eq_match.group(2).strip(),
                             "usage_logs": []
                         }
                         extracted_data.append(current_equipment)
-                        print(f"\n  → Found: {eq_id} - {name}")
+                        print(f"   🚜 Found equipment: {current_equipment['equipment_id']} - {current_equipment['name']}")
                         continue
-
-                    # Data row
-                    if current_equipment:
-                        row_match = data_row_pattern.search(line)
-                        if row_match:
-                            try:
-                                date_str = row_match.group(1)
-                                hours = float(row_match.group(2).replace(',', ''))
-                                cost = float(row_match.group(3).replace(',', ''))
-                                revenue = float(row_match.group(4).replace(',', ''))
-
-                                current_equipment["usage_logs"].append({
-                                    "date": date_str,
-                                    "hours": hours,
-                                    "cost": cost,
-                                    "revenue": revenue
-                                })
-                            except (ValueError, TypeError) as e:
-                                print(f"    Warning: Failed to parse row: {line[:60]}... ({e})")
-
-                print("", end="\r")  # clear line
-
-        print("\n" + "═" * 80)
-        print(f"Found {len(extracted_data)} equipment records")
+                    
+                    row_match = data_row_pattern.search(line)
+                    if row_match and current_equipment:
+                        try:
+                            hours = float(row_match.group(2).replace(',', ''))
+                            cost = float(row_match.group(3).replace(',', ''))
+                            revenue = float(row_match.group(4).replace(',', ''))
+                            
+                            log_entry = {
+                                "date": row_match.group(1),
+                                "hours": hours,
+                                "cost": cost,
+                                "revenue": revenue,
+                                "profit": revenue - cost
+                            }
+                            current_equipment["usage_logs"].append(log_entry)
+                            
+                        except (ValueError, IndexError) as e:
+                            print(f"   ⚠️  Warning: Could not parse data row: {e}")
+                            continue
+        
+        print("\n" + "=" * 80)
+        print(f"✅ Extraction complete!")
+        print(f"📊 Found {len(extracted_data)} equipment records")
+        
         total_logs = sum(len(eq["usage_logs"]) for eq in extracted_data)
-        print(f"Total usage entries: {total_logs}")
-
+        print(f"📈 Total usage log entries: {total_logs}")
+        
         return extracted_data
-
+        
     except FileNotFoundError:
-        print(f"❌ File not found: {pdf_path}")
+        print(f"❌ Error: File not found: {pdf_path}")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Error parsing PDF: {e}")
@@ -138,204 +134,231 @@ def parse_equipment_pdf(pdf_path: str) -> List[Dict[str, Any]]:
 
 
 # ============================================================================
-# DATE & DATA HELPERS
+# DATABASE INSERTION
 # ============================================================================
 
-def parse_date(date_str: str) -> Optional[str]:
-    """Convert MM/DD/YYYY → YYYY-MM-DD"""
+def format_date(date_str: str) -> str:
+    """Convert date from MM/DD/YYYY to YYYY-MM-DD format"""
     try:
-        dt = datetime.strptime(date_str.strip(), "%m/%d/%Y")
-        return dt.strftime("%Y-%m-%d")
-    except ValueError:
+        date_parts = date_str.split('/')
+        month = date_parts[0].zfill(2)
+        day = date_parts[1].zfill(2)
+        year = date_parts[2]
+        return f"{year}-{month}-{day}"
+    except (IndexError, ValueError) as e:
+        print(f"⚠️  Warning: Invalid date format '{date_str}': {e}")
         return None
 
 
-# ============================================================================
-# DATABASE OPERATIONS
-# ============================================================================
-
-def insert_into_database(equipment_data: List[Dict[str, Any]], dry_run: bool = False) -> None:
+def insert_into_database(equipment_data: List[Dict[str, Any]]) -> None:
+    """Insert parsed equipment data into PostgreSQL database"""
     if not equipment_data:
-        print("No data to insert")
+        print("⚠️  No data to insert")
         return
-
-    if dry_run:
-        print("\nDRY RUN MODE - no changes will be made to the database\n")
-    else:
-        print("\nInserting data into database...")
-        print("═" * 80)
-
-    inserted_equipment = 0
-    inserted_logs = 0
-
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            try:
-                for eq in equipment_data:
-                    eq_id = eq["equipment_id"]
-                    name = eq["name"]
-
-                    print(f"  Processing: {eq_id} - {name}")
-
-                    # Upsert equipment
-                    cur.execute("""
-                        INSERT INTO equipment (equipment_id, name)
-                        VALUES (%s, %s)
-                        ON CONFLICT (equipment_id) DO UPDATE
-                            SET name = EXCLUDED.name,
-                                updated_at = CURRENT_TIMESTAMP
-                        RETURNING id
-                    """, (eq_id, name))
-
-                    equipment_db_id = cur.fetchone()["id"]
-                    inserted_equipment += 1
-
-                    # Insert logs
-                    for log in eq["usage_logs"]:
-                        db_date = parse_date(log["date"])
-                        if not db_date:
-                            print(f"    Skipping invalid date: {log['date']}")
-                            continue
-
-                        if not dry_run:
-                            cur.execute("""
-                                INSERT INTO usage_logs 
-                                    (equipment_id, date, hours, cost, revenue)
-                                VALUES (%s, %s, %s, %s, %s)
-                                ON CONFLICT DO NOTHING
-                            """, (
-                                equipment_db_id,
-                                db_date,
-                                log["hours"],
-                                log["cost"],
-                                log["revenue"]
-                            ))
-
-                            if cur.rowcount > 0:
-                                inserted_logs += 1
-
-                    print(f"    → {len(eq['usage_logs'])} entries processed")
-
-                if not dry_run:
-                    conn.commit()
-                    print("\nCommit successful!")
-                else:
-                    print("\nDry run complete - no changes saved")
-
-                print(f"\nSummary:")
-                print(f"  • Equipment records: {inserted_equipment}")
-                print(f"  • Usage log entries: {inserted_logs}")
-
-            except Exception as e:
-                if not dry_run:
-                    conn.rollback()
-                print(f"\n❌ Database error: {e}")
-                sys.exit(1)
+    
+    conn = connect_to_database()
+    cursor = conn.cursor()
+    
+    total_equipment = 0
+    total_logs = 0
+    
+    print("\n" + "=" * 80)
+    print("💾 Inserting data into database...")
+    print("=" * 80 + "\n")
+    
+    try:
+        for equipment in equipment_data:
+            equipment_id = equipment['equipment_id']
+            name = equipment['name']
+            
+            print(f"📝 Processing: {equipment_id} - {name}")
+            
+            # Insert or update equipment
+            cursor.execute("""
+                INSERT INTO equipment (equipment_id, name)
+                VALUES (%s, %s)
+                ON CONFLICT (equipment_id) 
+                DO UPDATE SET 
+                    name = EXCLUDED.name,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING id
+            """, (equipment_id, name))
+            
+            equipment_db_id = cursor.fetchone()[0]
+            total_equipment += 1
+            print(f"   ✅ Equipment saved (DB ID: {equipment_db_id})")
+            
+            # Insert usage logs
+            log_count = 0
+            skipped_count = 0
+            
+            for log in equipment['usage_logs']:
+                formatted_date = format_date(log['date'])
+                
+                if not formatted_date:
+                    skipped_count += 1
+                    continue
+                
+                try:
+                    cursor.execute("""
+                        INSERT INTO usage_logs (equipment_id, date, hours, cost, revenue)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT DO NOTHING
+                    """, (equipment_db_id, formatted_date, log['hours'], log['cost'], log['revenue']))
+                    
+                    if cursor.rowcount > 0:
+                        log_count += 1
+                        total_logs += 1
+                        
+                except psycopg2.Error as e:
+                    print(f"   ⚠️  Warning: Could not insert log for {formatted_date}: {e}")
+                    skipped_count += 1
+                    continue
+            
+            print(f"   📊 Inserted {log_count} usage logs", end="")
+            if skipped_count > 0:
+                print(f" ({skipped_count} skipped)")
+            else:
+                print()
+            print()
+        
+        conn.commit()
+        
+        print("=" * 80)
+        print("✅ Database insertion complete!")
+        print(f"📊 Summary:")
+        print(f"   • Equipment records: {total_equipment}")
+        print(f"   • Usage log entries: {total_logs}")
+        print("=" * 80)
+        
+    except psycopg2.Error as e:
+        conn.rollback()
+        print(f"\n❌ Database error: {e}")
+        print("🔄 All changes have been rolled back")
+        sys.exit(1)
+    except Exception as e:
+        conn.rollback()
+        print(f"\n❌ Unexpected error: {e}")
+        print("🔄 All changes have been rolled back")
+        sys.exit(1)
+    finally:
+        cursor.close()
+        conn.close()
+        print("🔌 Database connection closed")
 
 
 # ============================================================================
 # VERIFICATION
 # ============================================================================
 
-def verify_data():
-    """Quick summary check from database"""
-    print("\nVerifying inserted data...")
-    print("═" * 80)
-
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
-                    e.equipment_id,
-                    e.name,
-                    COUNT(ul.id) AS log_count,
-                    ROUND(COALESCE(SUM(ul.hours), 0)::numeric, 2) AS total_hours,
-                    ROUND(COALESCE(SUM(ul.revenue), 0)::numeric, 2) AS total_revenue,
-                    ROUND(COALESCE(SUM(ul.profit), 0)::numeric, 2) AS total_profit
-                FROM equipment e
-                LEFT JOIN usage_logs ul ON e.id = ul.equipment_id
-                GROUP BY e.id, e.equipment_id, e.name
-                ORDER BY e.equipment_id
-            """)
-
-            rows = cur.fetchall()
-
-            if not rows:
-                print("No data found in database")
-                return
-
-            print(f"{'ID':<12} {'Name':<30} {'Logs':<6} {'Hours':<10} {'Revenue':<12} {'Profit':<12}")
-            print("-" * 82)
-
-            grand_total_logs = 0
-            grand_total_hours = 0
-            grand_total_revenue = 0
-            grand_total_profit = 0
-
-            for row in rows:
-                eq_id, name, logs, hours, revenue, profit = row
-                logs = logs or 0
-                hours = hours or 0
-                revenue = revenue or 0
-                profit = profit or 0
-
-                grand_total_logs += logs
-                grand_total_hours += hours
-                grand_total_revenue += revenue
-                grand_total_profit += profit
-
-                name_display = (name[:27] + "...") if len(name) > 27 else name
-
-                print(f"{eq_id:<12} {name_display:<30} {logs:<6} {hours:>9.2f} ${revenue:>11.2f} ${profit:>11.2f}")
-
-            print("-" * 82)
-            print(f"{'TOTAL':<12} {'':<30} {grand_total_logs:<6} {grand_total_hours:>9.2f} ${grand_total_revenue:>11.2f} ${grand_total_profit:>11.2f}")
+def verify_data() -> None:
+    """Verify the data was inserted correctly"""
+    print("\n" + "=" * 80)
+    print("🔍 Verifying inserted data...")
+    print("=" * 80 + "\n")
+    
+    conn = connect_to_database()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT 
+                e.equipment_id,
+                e.name,
+                COUNT(ul.id) as log_count,
+                SUM(ul.hours) as total_hours,
+                SUM(ul.cost) as total_cost,
+                SUM(ul.revenue) as total_revenue,
+                SUM(ul.profit) as total_profit
+            FROM equipment e
+            LEFT JOIN usage_logs ul ON e.id = ul.equipment_id
+            GROUP BY e.id, e.equipment_id, e.name
+            ORDER BY e.equipment_id
+        """)
+        
+        results = cursor.fetchall()
+        
+        if not results:
+            print("⚠️  No data found in database")
+            return
+        
+        print(f"{'Equipment ID':<15} {'Name':<30} {'Logs':<8} {'Hours':<10} {'Revenue':<12} {'Profit':<12}")
+        print("-" * 95)
+        
+        total_logs = 0
+        total_hours = 0
+        total_revenue = 0
+        total_profit = 0
+        
+        for row in results:
+            eq_id, name, log_count, hours, cost, revenue, profit = row
+            
+            log_count = log_count or 0
+            hours = float(hours or 0)
+            revenue = float(revenue or 0)
+            profit = float(profit or 0)
+            
+            total_logs += log_count
+            total_hours += hours
+            total_revenue += revenue
+            total_profit += profit
+            
+            display_name = name[:28] + "..." if len(name) > 30 else name
+            
+            print(f"{eq_id:<15} {display_name:<30} {log_count:<8} {hours:<10.2f} ${revenue:<11.2f} ${profit:<11.2f}")
+        
+        print("-" * 95)
+        print(f"{'TOTAL':<15} {'':<30} {total_logs:<8} {total_hours:<10.2f} ${total_revenue:<11.2f} ${total_profit:<11.2f}")
+        print()
+        
+    except psycopg2.Error as e:
+        print(f"❌ Error verifying data: {e}")
+    finally:
+        cursor.close()
+        conn.close()
 
 
 # ============================================================================
-# MAIN
+# MAIN FUNCTION
 # ============================================================================
 
 def main():
-    print("═" * 80)
-    print("      EQUIPMENT USAGE REPORT PARSER (2025 Edition)")
-    print("═" * 80)
-
+    """Main function"""
+    print("\n" + "=" * 80)
+    print(" " * 20 + "EQUIPMENT USAGE REPORT PARSER")
+    print("=" * 80)
+    
     if len(sys.argv) < 2:
-        print("Usage:")
-        print(f"  python {sys.argv[0]} <path_to_pdf> [--dry-run]")
+        print("\n❌ Error: No PDF file specified")
+        print("\n📖 Usage:")
+        print(f"   python {sys.argv[0]} <path_to_pdf>")
+        print("\n📝 Example:")
+        print(f'   python {sys.argv[0]} "Equipment Usage Report.pdf"')
         print()
         sys.exit(1)
-
+    
     pdf_path = sys.argv[1]
-    dry_run = "--dry-run" in sys.argv
-
-    if not os.path.isfile(pdf_path):
-        print(f"Error: File not found: {pdf_path}")
+    
+    if not os.path.exists(pdf_path):
+        print(f"\n❌ Error: File not found: {pdf_path}")
         sys.exit(1)
-
-    init_pool()
-
-    try:
-        data = parse_equipment_pdf(pdf_path)
-
-        if not data:
-            print("No equipment data found in PDF")
-            return
-
-        insert_into_database(data, dry_run=dry_run)
-
-        if not dry_run:
-            verify_data()
-
-        print("\n" + "═" * 80)
-        print("Process completed successfully!")
-        print("═" * 80)
-
-    finally:
-        if pool:
-            pool.close()
-            print("Connection pool closed")
+    
+    file_size = os.path.getsize(pdf_path) / 1024
+    print(f"\n📁 File: {os.path.basename(pdf_path)}")
+    print(f"📏 Size: {file_size:.2f} KB")
+    print(f"📍 Path: {pdf_path}")
+    
+    equipment_data = parse_equipment_pdf(pdf_path)
+    
+    if not equipment_data:
+        print("\n⚠️  No equipment data found in PDF")
+        sys.exit(1)
+    
+    insert_into_database(equipment_data)
+    verify_data()
+    
+    print("\n✅ Process completed successfully!")
+    print("=" * 80 + "\n")
 
 
 if __name__ == "__main__":
