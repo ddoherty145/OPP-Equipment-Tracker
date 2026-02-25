@@ -265,3 +265,51 @@ pyrightconfig.json
 
 .agents/
 "Equipment Usage Report  for December 2025, Pulled 01-16-26 02.39.32.pdf"
+
+# === EXISTING (Backend) ===
+.env
+*.env
+venv/
+__pycache__/
+*.pyc
+postgres_data/
+.vscode/
+.idea/
+.DS_Store
+*.pdf
+
+# === NEW (Flutter/Mobile) ===
+# Flutter/Dart
+mobile/**/build/
+mobile/**/.dart_tool/
+mobile/**/.flutter-plugins
+mobile/**/.flutter-plugins-dependencies
+mobile/**/.packages
+mobile/**/.pub-cache/
+mobile/**/.pub/
+mobile/**/pubspec.lock
+
+# iOS
+mobile/**/ios/Pods/
+mobile/**/ios/.symlinks/
+mobile/**/ios/Flutter/Flutter.framework
+mobile/**/ios/Flutter/Flutter.podspec
+mobile/**/ios/Runner.xcworkspace
+
+# Android
+mobile/**/android/.gradle/
+mobile/**/android/captures/
+mobile/**/android/gradlew
+mobile/**/android/gradlew.bat
+mobile/**/android/local.properties
+mobile/**/android/**/GeneratedPluginRegistrant.java
+mobile/**/android/key.properties
+
+# Coverage
+mobile/**/coverage/
+
+# Exceptions (DO commit these)
+!mobile/**/android/gradlew
+```
+
+---
