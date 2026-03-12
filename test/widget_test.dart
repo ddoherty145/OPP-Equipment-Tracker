@@ -6,6 +6,7 @@ import 'package:equipment_tracker_app/core/repositories/equipment_repository.dar
 import 'package:equipment_tracker_app/core/repositories/usage_log_repository.dart';
 import 'package:equipment_tracker_app/features/analytics/services/export_service.dart';
 import 'package:equipment_tracker_app/features/app/tracker_controller.dart';
+import 'package:equipment_tracker_app/features/imports/services/backend_data_sync_service.dart';
 import 'package:equipment_tracker_app/main.dart';
 import 'package:equipment_tracker_app/models/analytics_summary.dart';
 import 'package:equipment_tracker_app/models/equipment.dart';
@@ -26,6 +27,8 @@ void main() {
     expect(find.text('Equipment'), findsWidgets);
     expect(find.text('Logs'), findsOneWidget);
     expect(find.text('Analytics'), findsOneWidget);
+    expect(find.text('Import'), findsOneWidget);
+    expect(find.text('Reports'), findsOneWidget);
   });
 
   testWidgets('Switching tabs shows analytics export actions', (
@@ -44,6 +47,41 @@ void main() {
     expect(find.text('Export Excel'), findsOneWidget);
     expect(find.text('Export PDF'), findsOneWidget);
   });
+
+  testWidgets('Switching to import tab shows import actions', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+
+    await tester.tap(find.text('Import').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import Data'), findsOneWidget);
+    expect(find.text('Import PDF'), findsOneWidget);
+    expect(find.text('Import Excel'), findsOneWidget);
+  });
+
+  testWidgets('Switching to reports tab shows report generator', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_buildTestApp());
+    await tester.pump();
+
+    await tester.tap(find.text('Reports').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preset Reports'), findsOneWidget);
+    expect(find.text('Generate & Share'), findsOneWidget);
+  });
 }
 
 Widget _buildTestApp() {
@@ -51,6 +89,7 @@ Widget _buildTestApp() {
     equipmentRepository: _FakeEquipmentRepository(),
     usageLogRepository: _FakeUsageLogRepository(),
     exportService: ExportService(),
+    backendDataSyncService: BackendDataSyncService(),
   );
 
   controller.equipment = [
@@ -96,6 +135,9 @@ class _FakeEquipmentRepository implements EquipmentRepository {
 
   @override
   Future<void> update(Equipment equipment) async {}
+
+  @override
+  Future<void> replaceAll(List<Equipment> equipment) async {}
 }
 
 class _FakeUsageLogRepository implements UsageLogRepository {
@@ -131,4 +173,7 @@ class _FakeUsageLogRepository implements UsageLogRepository {
 
   @override
   Future<void> update(UsageLog log) async {}
+
+  @override
+  Future<void> replaceAll(List<UsageLog> logs) async {}
 }

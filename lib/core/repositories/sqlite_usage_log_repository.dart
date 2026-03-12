@@ -114,6 +114,25 @@ class SqliteUsageLogRepository implements UsageLogRepository {
   }
 
   @override
+  Future<void> replaceAll(List<UsageLog> logs) async {
+    final db = await _database.database;
+    await db.transaction((txn) async {
+      await txn.delete('usage_logs');
+      for (final log in logs) {
+        await txn.insert('usage_logs', {
+          'equipment_id': log.equipmentId,
+          'date': log.date.toIso8601String(),
+          'hours': log.hours,
+          'cost': log.cost,
+          'revenue': log.revenue,
+          'profit': log.profit,
+        });
+      }
+    });
+    await _refreshAllEquipmentTotals();
+  }
+
+  @override
   Future<AnalyticsSummary> getSummary({
     int? equipmentId,
     DateTime? start,
@@ -237,5 +256,16 @@ class SqliteUsageLogRepository implements UsageLogRepository {
         total_profit = COALESCE((SELECT SUM(profit) FROM usage_logs WHERE equipment_id = ?), 0)
       WHERE id = ?
     ''', [equipmentId, equipmentId, equipmentId, equipmentId]);
+  }
+
+  Future<void> _refreshAllEquipmentTotals() async {
+    final db = await _database.database;
+    await db.execute('''
+      UPDATE equipment
+      SET
+        total_hours = COALESCE((SELECT SUM(hours) FROM usage_logs u WHERE u.equipment_id = equipment.id), 0),
+        total_revenue = COALESCE((SELECT SUM(revenue) FROM usage_logs u WHERE u.equipment_id = equipment.id), 0),
+        total_profit = COALESCE((SELECT SUM(profit) FROM usage_logs u WHERE u.equipment_id = equipment.id), 0)
+    ''');
   }
 }

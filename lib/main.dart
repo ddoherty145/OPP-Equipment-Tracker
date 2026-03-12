@@ -5,6 +5,9 @@ import 'package:equipment_tracker_app/features/analytics/analytics_screen.dart';
 import 'package:equipment_tracker_app/features/analytics/services/export_service.dart';
 import 'package:equipment_tracker_app/features/app/tracker_controller.dart';
 import 'package:equipment_tracker_app/features/equipment/equipment_screen.dart';
+import 'package:equipment_tracker_app/features/imports/import_screen.dart';
+import 'package:equipment_tracker_app/features/imports/services/backend_data_sync_service.dart';
+import 'package:equipment_tracker_app/features/reports/reports_screen.dart';
 import 'package:equipment_tracker_app/features/usage/usage_log_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -29,12 +32,15 @@ class MyApp extends StatelessWidget {
     final equipmentRepository = SqliteEquipmentRepository(database);
     final usageRepository = SqliteUsageLogRepository(database);
     final exportService = ExportService();
+    final backendDataSyncService = BackendDataSyncService();
 
     return ChangeNotifierProvider(
       create: (_) => TrackerController(
         equipmentRepository: equipmentRepository,
         usageLogRepository: usageRepository,
         exportService: exportService,
+        backendDataSyncService: backendDataSyncService,
+        initialApiBaseUrl: dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000',
       )..initialize(),
       child: MaterialApp(
         title: 'Equipment Tracker',
@@ -59,6 +65,8 @@ class TrackerHomePage extends StatelessWidget {
           EquipmentScreen(controller: controller),
           UsageLogScreen(controller: controller),
           AnalyticsScreen(controller: controller),
+          const ImportScreen(),
+          const ReportsScreen(),
         ];
 
         return Scaffold(
@@ -105,6 +113,16 @@ class TrackerHomePage extends StatelessWidget {
                 icon: Icon(Icons.analytics_outlined),
                 selectedIcon: Icon(Icons.analytics),
                 label: 'Analytics',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.upload_file_outlined),
+                selectedIcon: Icon(Icons.upload_file),
+                label: 'Import',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.assessment_outlined),
+                selectedIcon: Icon(Icons.assessment),
+                label: 'Reports',
               ),
             ],
           ),

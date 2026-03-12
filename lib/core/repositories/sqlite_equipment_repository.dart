@@ -52,4 +52,22 @@ class SqliteEquipmentRepository implements EquipmentRepository {
     final db = await _database.database;
     await db.delete('equipment', where: 'id = ?', whereArgs: [id]);
   }
+
+  @override
+  Future<void> replaceAll(List<Equipment> equipment) async {
+    final db = await _database.database;
+    await db.transaction((txn) async {
+      await txn.delete('usage_logs');
+      await txn.delete('equipment');
+      for (final item in equipment) {
+        await txn.insert('equipment', {
+          'equipment_id': item.equipmentId,
+          'name': item.name,
+          'total_hours': item.totalHours,
+          'total_revenue': item.totalRevenue,
+          'total_profit': item.totalProfit,
+        });
+      }
+    });
+  }
 }

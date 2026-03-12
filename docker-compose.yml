@@ -22,7 +22,9 @@ services:
 
 # api
   api:
-    build: ./api
+    build:
+      context: ./api
+      dockerfile: DockerFile
     container_name: equipment-api
     restart: always
     ports:

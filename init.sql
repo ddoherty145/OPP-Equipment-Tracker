@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS equipment (
     id SERIAL PRIMARY KEY,
     equipment_id VARCHAR(50) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
+    acquisition_date DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:equipment_tracker_app/core/repositories/equipment_repository.dart';
 import 'package:equipment_tracker_app/core/repositories/usage_log_repository.dart';
 import 'package:equipment_tracker_app/features/analytics/services/export_service.dart';
+import 'package:equipment_tracker_app/features/imports/services/backend_data_sync_service.dart';
 import 'package:equipment_tracker_app/models/analytics_summary.dart';
 import 'package:equipment_tracker_app/models/equipment.dart';
 import 'package:equipment_tracker_app/models/usage_log.dart';
@@ -13,17 +14,26 @@ class TrackerController extends ChangeNotifier {
     required EquipmentRepository equipmentRepository,
     required UsageLogRepository usageLogRepository,
     required ExportService exportService,
+    required BackendDataSyncService backendDataSyncService,
+    String initialApiBaseUrl = 'http://localhost:8000',
   })  : _equipmentRepository = equipmentRepository,
         _usageLogRepository = usageLogRepository,
-        _exportService = exportService;
+        _exportService = exportService,
+        _backendDataSyncService = backendDataSyncService,
+        apiBaseUrl = initialApiBaseUrl;
 
   final EquipmentRepository _equipmentRepository;
   final UsageLogRepository _usageLogRepository;
   final ExportService _exportService;
+  final BackendDataSyncService _backendDataSyncService;
 
   bool isLoading = false;
   String? error;
   int selectedTab = 0;
+  String apiBaseUrl;
+  DateTime? lastImportedSyncAt;
+  int lastImportedEquipmentCount = 0;
+  int lastImportedLogCount = 0;
 
   List<Equipment> equipment = [];
   List<UsageLog> usageLogs = [];
@@ -35,6 +45,13 @@ class TrackerController extends ChangeNotifier {
 
   Future<void> initialize() async {
     await refreshAll();
+  }
+
+  void setApiBaseUrl(String url) {
+    final next = url.trim();
+    if (next.isEmpty) return;
+    apiBaseUrl = next;
+    notifyListeners();
   }
 
   void setSelectedTab(int index) {
@@ -151,6 +168,56 @@ class TrackerController extends ChangeNotifier {
   Future<void> deleteUsageLog(int id) async {
     await _runWithLoading(() async {
       await _usageLogRepository.delete(id);
+      await _loadData();
+    });
+  }
+
+  Future<void> syncImportedDataFromApi({String? baseUrlOverride}) async {
+    await _runWithLoading(() async {
+      final targetUrl = (baseUrlOverride ?? apiBaseUrl).trim();
+      if (targetUrl.isEmpty) {
+        throw ArgumentError('API URL is required for sync.');
+      }
+      apiBaseUrl = targetUrl;
+
+      final snapshot = await _backendDataSyncService.fetchSnapshot(targetUrl);
+      await _equipmentRepository.replaceAll(
+        snapshot.equipment
+            .map(
+              (item) => Equipment(
+                equipmentId: item.equipmentCode,
+                name: item.name,
+              ),
+            )
+            .toList(),
+      );
+
+      final localEquipment = await _equipmentRepository.getAll();
+      final codeToLocalId = <String, int>{
+        for (final item in localEquipment)
+          if (item.id != null) item.equipmentId: item.id!,
+      };
+
+      final localLogs = snapshot.usageLogs
+          .where((log) => codeToLocalId.containsKey(log.equipmentCode))
+          .map(
+            (log) => UsageLog(
+              equipmentId: codeToLocalId[log.equipmentCode]!,
+              date: log.date,
+              hours: log.hours,
+              cost: log.cost,
+              revenue: log.revenue,
+              profit: log.profit,
+            ),
+          )
+          .toList();
+
+      await _usageLogRepository.replaceAll(localLogs);
+
+      lastImportedSyncAt = DateTime.now();
+      lastImportedEquipmentCount = snapshot.equipment.length;
+      lastImportedLogCount = localLogs.length;
+
       await _loadData();
     });
   }

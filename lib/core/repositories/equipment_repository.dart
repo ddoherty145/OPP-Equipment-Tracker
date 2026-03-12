@@ -5,4 +5,5 @@ abstract class EquipmentRepository {
   Future<int> create(Equipment equipment);
   Future<void> update(Equipment equipment);
   Future<void> delete(int id);
+  Future<void> replaceAll(List<Equipment> equipment);
 }

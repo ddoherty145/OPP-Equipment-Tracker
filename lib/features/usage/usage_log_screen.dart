@@ -1,4 +1,5 @@
 import 'package:equipment_tracker_app/features/app/tracker_controller.dart';
+import 'package:equipment_tracker_app/features/app/sync_import_dialog.dart';
 import 'package:equipment_tracker_app/models/usage_log.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -127,6 +128,11 @@ class UsageLogScreen extends StatelessWidget {
                 : () => _showUsageLogForm(context),
             icon: const Icon(Icons.add),
             label: const Text('Add Log'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => showSyncImportedDataDialog(context, controller),
+            icon: const Icon(Icons.sync),
+            label: const Text('Sync Imports'),
           ),
         ],
       ),

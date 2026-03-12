@@ -11,6 +11,7 @@ abstract class UsageLogRepository {
   Future<int> create(UsageLog log);
   Future<void> update(UsageLog log);
   Future<void> delete(int id);
+  Future<void> replaceAll(List<UsageLog> logs);
   Future<AnalyticsSummary> getSummary({
     int? equipmentId,
     DateTime? start,

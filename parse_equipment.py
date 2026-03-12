@@ -4,12 +4,13 @@ Parses PDF reports from ERP system and imports into PostgreSQL database
 """
 
 import re
-import pdfplumber
 import psycopg2
 import os
 import sys
 from datetime import datetime
 from typing import List, Dict, Any
+
+from api.import_parsers import parse_equipment_pdf_bytes
 
 # ============================================================================
 # DATABASE CONNECTION (SIMPLE - NO POOLING)
@@ -53,68 +54,12 @@ def parse_equipment_pdf(pdf_path: str) -> List[Dict[str, Any]]:
     """
     extracted_data = []
     
-    # Regex patterns for parsing
-    eq_header_pattern = re.compile(r"Equipment:\s+([\w\d-]+)\s+-\s+(.+)")
-    data_row_pattern = re.compile(
-        r"(\d{1,2}/\d{1,2}/\d{4})"
-        r".*?"
-        r"(\d+\.\d{2})"
-        r".*?"
-        r"([\d,]+\.\d{2})"
-        r".*?"
-        r"([\d,]+\.\d{2})"
-    )
-    
-    current_equipment = None
-    
     print(f"\n📄 Opening PDF: {pdf_path}")
     print("=" * 80)
     
     try:
-        with pdfplumber.open(pdf_path) as pdf:
-            total_pages = len(pdf.pages)
-            print(f"📊 Total pages: {total_pages}\n")
-            
-            for page_num, page in enumerate(pdf.pages, 1):
-                text = page.extract_text()
-                
-                if not text:
-                    print(f"⚠️  Page {page_num}: No text found, skipping...")
-                    continue
-                
-                print(f"📖 Processing page {page_num}/{total_pages}...")
-                
-                for line in text.split('\n'):
-                    eq_match = eq_header_pattern.search(line)
-                    if eq_match:
-                        current_equipment = {
-                            "equipment_id": eq_match.group(1).strip(),
-                            "name": eq_match.group(2).strip(),
-                            "usage_logs": []
-                        }
-                        extracted_data.append(current_equipment)
-                        print(f"   🚜 Found equipment: {current_equipment['equipment_id']} - {current_equipment['name']}")
-                        continue
-                    
-                    row_match = data_row_pattern.search(line)
-                    if row_match and current_equipment:
-                        try:
-                            hours = float(row_match.group(2).replace(',', ''))
-                            cost = float(row_match.group(3).replace(',', ''))
-                            revenue = float(row_match.group(4).replace(',', ''))
-                            
-                            log_entry = {
-                                "date": row_match.group(1),
-                                "hours": hours,
-                                "cost": cost,
-                                "revenue": revenue,
-                                "profit": revenue - cost
-                            }
-                            current_equipment["usage_logs"].append(log_entry)
-                            
-                        except (ValueError, IndexError) as e:
-                            print(f"   ⚠️  Warning: Could not parse data row: {e}")
-                            continue
+        with open(pdf_path, "rb") as f:
+            extracted_data = parse_equipment_pdf_bytes(f.read())
         
         print("\n" + "=" * 80)
         print(f"✅ Extraction complete!")
@@ -125,9 +70,6 @@ def parse_equipment_pdf(pdf_path: str) -> List[Dict[str, Any]]:
         
         return extracted_data
         
-    except FileNotFoundError:
-        print(f"❌ Error: File not found: {pdf_path}")
-        sys.exit(1)
     except Exception as e:
         print(f"❌ Error parsing PDF: {e}")
         sys.exit(1)

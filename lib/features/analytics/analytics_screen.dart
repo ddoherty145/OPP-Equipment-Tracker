@@ -1,4 +1,5 @@
 import 'package:equipment_tracker_app/features/app/tracker_controller.dart';
+import 'package:equipment_tracker_app/features/app/sync_import_dialog.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -161,6 +162,11 @@ class AnalyticsScreen extends StatelessWidget {
             controller.updateFilters(clearDateRange: true, clearEquipment: true);
           },
           child: const Text('Clear Filters'),
+        ),
+        OutlinedButton.icon(
+          onPressed: () => showSyncImportedDataDialog(context, controller),
+          icon: const Icon(Icons.sync),
+          label: const Text('Sync Imports'),
         ),
       ],
     );
