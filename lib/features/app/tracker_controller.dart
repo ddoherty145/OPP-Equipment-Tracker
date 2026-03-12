@@ -4,6 +4,7 @@ import 'package:equipment_tracker_app/core/repositories/equipment_repository.dar
 import 'package:equipment_tracker_app/core/repositories/usage_log_repository.dart';
 import 'package:equipment_tracker_app/features/analytics/services/export_service.dart';
 import 'package:equipment_tracker_app/features/imports/services/backend_data_sync_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:equipment_tracker_app/models/analytics_summary.dart';
 import 'package:equipment_tracker_app/models/equipment.dart';
 import 'package:equipment_tracker_app/models/usage_log.dart';
@@ -42,6 +43,9 @@ class TrackerController extends ChangeNotifier {
 
   int? selectedEquipmentId;
   DateTimeRange? selectedDateRange;
+  bool _useRemoteCache = false;
+  List<Equipment> _remoteEquipmentCache = [];
+  List<UsageLog> _remoteUsageLogCache = [];
 
   Future<void> initialize() async {
     await refreshAll();
@@ -180,6 +184,11 @@ class TrackerController extends ChangeNotifier {
       }
       apiBaseUrl = targetUrl;
 
+      if (kIsWeb) {
+        await _syncFromBackendToRemoteCache(targetUrl);
+        return;
+      }
+
       final snapshot = await _backendDataSyncService.fetchSnapshot(targetUrl);
       await _equipmentRepository.replaceAll(
         snapshot.equipment
@@ -218,6 +227,7 @@ class TrackerController extends ChangeNotifier {
       lastImportedEquipmentCount = snapshot.equipment.length;
       lastImportedLogCount = localLogs.length;
 
+      _useRemoteCache = false;
       await _loadData();
     });
   }
@@ -258,6 +268,14 @@ class TrackerController extends ChangeNotifier {
   }
 
   Future<void> _loadData() async {
+    if (_useRemoteCache) {
+      equipment = _remoteEquipmentCache;
+      usageLogs = _applyUsageFilters(_remoteUsageLogCache);
+      summary = _computeSummary(usageLogs);
+      hoursByDay = _computeHoursByDay(usageLogs);
+      return;
+    }
+
     equipment = await _equipmentRepository.getAll();
     usageLogs = await _usageLogRepository.getAll(
       equipmentId: selectedEquipmentId,
@@ -274,5 +292,123 @@ class TrackerController extends ChangeNotifier {
       start: selectedDateRange?.start,
       end: selectedDateRange?.end,
     );
+  }
+
+  List<UsageLog> _applyUsageFilters(List<UsageLog> source) {
+    return source.where((log) {
+      if (selectedEquipmentId != null && log.equipmentId != selectedEquipmentId) {
+        return false;
+      }
+      if (selectedDateRange != null) {
+        final start = DateTime(
+          selectedDateRange!.start.year,
+          selectedDateRange!.start.month,
+          selectedDateRange!.start.day,
+        );
+        final end = DateTime(
+          selectedDateRange!.end.year,
+          selectedDateRange!.end.month,
+          selectedDateRange!.end.day,
+          23,
+          59,
+          59,
+          999,
+        );
+        if (log.date.isBefore(start) || log.date.isAfter(end)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+  }
+
+  AnalyticsSummary _computeSummary(List<UsageLog> logs) {
+    final totalHours = logs.fold<double>(0, (sum, log) => sum + log.hours);
+    final totalCost = logs.fold<double>(0, (sum, log) => sum + log.cost);
+    final totalRevenue = logs.fold<double>(0, (sum, log) => sum + log.revenue);
+    final totalProfit = logs.fold<double>(0, (sum, log) => sum + log.profit);
+    final equipmentCount = logs.map((log) => log.equipmentId).toSet().length;
+
+    double avgHoursPerDay = 0;
+    if (logs.isNotEmpty) {
+      final sortedDates = logs.map((log) => DateTime(log.date.year, log.date.month, log.date.day)).toList()
+        ..sort();
+      final days = sortedDates.last.difference(sortedDates.first).inDays + 1;
+      if (days > 0) {
+        avgHoursPerDay = totalHours / days;
+      }
+    }
+
+    return AnalyticsSummary(
+      totalEquipment: equipmentCount,
+      totalLogs: logs.length,
+      totalHours: totalHours,
+      totalCost: totalCost,
+      totalRevenue: totalRevenue,
+      totalProfit: totalProfit,
+      avgHoursPerDay: avgHoursPerDay,
+    );
+  }
+
+  Map<DateTime, double> _computeHoursByDay(List<UsageLog> logs) {
+    final result = <DateTime, double>{};
+    for (final log in logs) {
+      final key = DateTime(log.date.year, log.date.month, log.date.day);
+      result[key] = (result[key] ?? 0) + log.hours;
+    }
+    return result;
+  }
+
+  Future<void> _syncFromBackendToRemoteCache(String targetUrl) async {
+    final snapshot = await _backendDataSyncService.fetchSnapshot(targetUrl);
+
+    final codeToId = <String, int>{};
+    final equipmentWithTotals = <Equipment>[];
+    for (var index = 0; index < snapshot.equipment.length; index++) {
+      final item = snapshot.equipment[index];
+      final syntheticId = index + 1;
+      codeToId[item.equipmentCode] = syntheticId;
+
+      final relatedLogs = snapshot.usageLogs.where((log) => log.equipmentCode == item.equipmentCode);
+      final totalHours = relatedLogs.fold<double>(0, (sum, log) => sum + log.hours);
+      final totalRevenue = relatedLogs.fold<double>(0, (sum, log) => sum + log.revenue);
+      final totalProfit = relatedLogs.fold<double>(0, (sum, log) => sum + log.profit);
+
+      equipmentWithTotals.add(
+        Equipment(
+          id: syntheticId,
+          equipmentId: item.equipmentCode,
+          name: item.name,
+          totalHours: totalHours,
+          totalRevenue: totalRevenue,
+          totalProfit: totalProfit,
+        ),
+      );
+    }
+
+    final mappedLogs = snapshot.usageLogs
+        .where((log) => codeToId.containsKey(log.equipmentCode))
+        .map(
+          (log) => UsageLog(
+            equipmentId: codeToId[log.equipmentCode]!,
+            date: log.date,
+            hours: log.hours,
+            cost: log.cost,
+            revenue: log.revenue,
+            profit: log.profit,
+          ),
+        )
+        .toList();
+
+    _remoteEquipmentCache = equipmentWithTotals;
+    _remoteUsageLogCache = mappedLogs;
+    _useRemoteCache = true;
+
+    lastImportedSyncAt = DateTime.now();
+    lastImportedEquipmentCount = equipmentWithTotals.length;
+    lastImportedLogCount = mappedLogs.length;
+
+    await _loadData();
   }
 }

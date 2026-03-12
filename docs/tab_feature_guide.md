@@ -2,6 +2,15 @@
 
 This guide explains each app tab, what it is for, and how to use it.
 
+## Navigation Summary
+
+Main tabs in the app:
+- Equipment
+- Logs
+- Analytics
+- Import
+- Reports
+
 ## Equipment Tab
 
 Purpose:
@@ -11,7 +20,7 @@ Purpose:
 How to use:
 - Click `Add` to create a new equipment item.
 - Use `Edit` / `Delete` from the row menu.
-- Use `Sync Imports` to pull imported backend data into local app data.
+- Use `Sync Imports` to pull imported backend data into tab data.
 
 What you see:
 - Equipment code (unique identifier), name, total hours, and total profit.
@@ -27,7 +36,7 @@ How to use:
 - Use `Edit` / `Delete` from each row menu.
 - Filter by equipment and date range.
 - Use `Clear Filters` to reset.
-- Use `Sync Imports` to refresh local logs from imported backend data.
+- Use `Sync Imports` to refresh logs from imported backend data.
 
 What you see:
 - Date, hours, cost, revenue, and profit per entry.
@@ -57,11 +66,16 @@ How to use:
 - Set `API Base URL` (for emulator use `http://10.0.2.2:8000`).
 - Upload with `Import PDF` or `Import Excel`.
 - Keep `Auto-sync other tabs after import` enabled for seamless workflow.
+- If auto-sync is off, use `Sync Imports` in Equipment/Logs/Analytics tabs manually.
 
 What you see:
 - Last import result (equipment processed, logs inserted/skipped).
 - Backend analytics snapshot after upload.
 - Auto-sync status message when enabled.
+
+Notes:
+- On web (Chrome/Edge), auto-sync updates an in-memory tab dataset from backend data.
+- On desktop/mobile, auto-sync updates local SQLite-backed tab data.
 
 ## Reports Tab
 
@@ -80,14 +94,14 @@ How to use:
 - Optionally enter `Equipment ID` for single line-item reporting; leave blank for bulk.
 - Choose output format (`Excel` or `PDF`).
 - For Profit Margin Report, choose metric mode:
-  - `$ / hr delta`
-  - `% margin`
+  - `$ / hr delta` = `(revenue/hour) - (cost/hour)`
+  - `% margin` = `((revenue - cost) / revenue) * 100`
 - Click `Generate & Share`.
 
 ## Recommended User Flow
 
 1. Upload source files in `Import`.
-2. Let auto-sync populate app tabs.
-3. Review/adjust data in `Equipment` and `Logs`.
-4. Validate trends in `Analytics`.
-5. Generate deliverables from `Reports`.
+2. Let auto-sync populate tabs (or run manual sync from Equipment/Logs/Analytics).
+3. Review and adjust data in `Equipment` and `Logs`.
+4. Validate totals and trends in `Analytics`.
+5. Generate business deliverables from `Reports`.
