@@ -1,0 +1,52 @@
+name: equipment_tracker_app
+description: Equipment utilization tracking app for portfolio companies
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # UI
+  cupertino_icons: ^1.0.2
+  
+  # HTTP & API
+  http: ^1.1.0
+  
+  # Local Database (offline support)
+  sqflite: ^2.3.0
+  path_provider: ^2.1.1
+  path: ^1.8.3
+  
+  # State Management
+  provider: ^6.1.1
+  
+  # Charts & Analytics
+  fl_chart: ^0.66.0
+  
+  # Date handling
+  intl: ^0.18.1
+  
+  # File export (Excel/PDF)
+  excel: ^4.0.0
+  pdf: ^3.10.0
+  share_plus: ^7.2.1
+  
+  # Environment variables
+  flutter_dotenv: ^5.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  sqflite_common_ffi: ^2.3.3
+
+flutter:
+  uses-material-design: true
+  
+  # Assets
+  assets:
+    - .env
